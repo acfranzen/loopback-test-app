@@ -1,0 +1,112 @@
+name: Loopback Auto-Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "GitHub issue number created by Loopback"
+        required: true
+        type: string
+      summary:
+        description: "PM-level summary of the issue"
+        required: true
+        type: string
+      category:
+        description: "Issue category (bug, feature_request, improvement)"
+        required: true
+        type: string
+      feedback_quotes:
+        description: "JSON array of user feedback quotes"
+        required: false
+        type: string
+        default: "[]"
+      loopback_issue_id:
+        description: "Loopback internal issue ID for callback"
+        required: true
+        type: string
+
+jobs:
+  auto-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Notify Loopback — in progress
+        if: ${{ env.LOOPBACK_API_URL != '' }}
+        env:
+          LOOPBACK_API_URL: ${{ secrets.LOOPBACK_API_URL }}
+          LOOPBACK_API_KEY: ${{ secrets.LOOPBACK_API_KEY }}
+        run: |
+          curl -s -X POST "${LOOPBACK_API_URL}/api/webhooks/github" \
+            -H "Authorization: Bearer ${LOOPBACK_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "loopback_issue_id": "${{ inputs.loopback_issue_id }}",
+              "status": "in_progress"
+            }' || true
+
+      - name: Run Claude Code to fix the issue
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are fixing an issue reported by users via Loopback feedback.
+
+            ## Issue Summary
+            ${{ inputs.summary }}
+
+            ## Category
+            ${{ inputs.category }}
+
+            ## User Feedback
+            ${{ inputs.feedback_quotes }}
+
+            ## Instructions
+            1. Read the issue summary and user feedback carefully
+            2. Investigate the codebase to understand the relevant code
+            3. Implement a fix or feature based on the feedback
+            4. Create a new branch named `loopback/fix-${{ inputs.issue_number }}`
+            5. Commit your changes with a clear commit message
+            6. Open a pull request that references issue #${{ inputs.issue_number }}
+
+            Make sure the fix is clean, well-tested if possible, and follows the existing code style.
+          allowed_tools: "Bash,GitHub,Write,Edit,Read"
+          timeout_minutes: "30"
+
+      - name: Notify Loopback — PR opened
+        if: ${{ success() && env.LOOPBACK_API_URL != '' }}
+        env:
+          LOOPBACK_API_URL: ${{ secrets.LOOPBACK_API_URL }}
+          LOOPBACK_API_KEY: ${{ secrets.LOOPBACK_API_KEY }}
+        run: |
+          # Try to find the PR URL from the claude output or from git
+          PR_URL=$(gh pr list --head "loopback/fix-${{ inputs.issue_number }}" --json url --jq '.[0].url' 2>/dev/null || echo "")
+          curl -s -X POST "${LOOPBACK_API_URL}/api/webhooks/github" \
+            -H "Authorization: Bearer ${LOOPBACK_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"loopback_issue_id\": \"${{ inputs.loopback_issue_id }}\",
+              \"status\": \"pr_opened\",
+              \"pr_url\": \"${PR_URL}\"
+            }" || true
+
+      - name: Notify Loopback — failed
+        if: ${{ failure() && env.LOOPBACK_API_URL != '' }}
+        env:
+          LOOPBACK_API_URL: ${{ secrets.LOOPBACK_API_URL }}
+          LOOPBACK_API_KEY: ${{ secrets.LOOPBACK_API_KEY }}
+        run: |
+          curl -s -X POST "${LOOPBACK_API_URL}/api/webhooks/github" \
+            -H "Authorization: Bearer ${LOOPBACK_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "loopback_issue_id": "${{ inputs.loopback_issue_id }}",
+              "status": "failed",
+              "error": "Claude Code action failed — check workflow logs"
+            }' || true
