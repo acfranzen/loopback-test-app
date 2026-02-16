@@ -55,6 +55,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             You are fixing an issue reported by users via Loopback feedback.
 
@@ -76,8 +77,6 @@ jobs:
             6. Open a pull request that references issue #${{ inputs.issue_number }}
 
             Make sure the fix is clean, well-tested if possible, and follows the existing code style.
-          allowed_tools: "Bash,GitHub,Write,Edit,Read"
-          timeout_minutes: "30"
 
       - name: Notify Loopback — PR opened
         if: ${{ success() && env.LOOPBACK_API_URL != '' }}
