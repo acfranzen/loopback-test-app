@@ -55,7 +55,6 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: "--allowedTools Bash Edit Read Write GitHub"
           prompt: |
             You are fixing an issue reported by users via Loopback feedback.
@@ -72,12 +71,21 @@ jobs:
             ## Instructions
             1. Read the issue summary and user feedback carefully
             2. Investigate the codebase to understand the relevant code
-            3. Implement a fix or feature based on the feedback
-            4. Create a new branch named `loopback/fix-${{ inputs.issue_number }}`
-            5. Commit your changes with a clear commit message
-            6. Open a pull request that references issue #${{ inputs.issue_number }}
+            3. Implement a fix based on the feedback
+            4. Use bash commands to create a branch, commit, and open a PR:
 
-            Make sure the fix is clean, well-tested if possible, and follows the existing code style.
+            ```bash
+            git checkout -b loopback/fix-${{ inputs.issue_number }}
+            # ... make your changes using Edit/Write tools ...
+            git add -A
+            git commit -m "fix: <descriptive message> (closes #${{ inputs.issue_number }})"
+            git push origin loopback/fix-${{ inputs.issue_number }}
+            gh pr create --title "fix: <descriptive title>" \
+              --body "Fixes #${{ inputs.issue_number }}\n\n<description of changes>" \
+              --base main
+            ```
+
+            Make sure the fix is clean, follows the existing code style, and the PR references the issue.
 
       - name: Notify Loopback — PR opened
         if: ${{ success() && env.LOOPBACK_API_URL != '' }}
@@ -85,7 +93,6 @@ jobs:
           LOOPBACK_API_URL: ${{ secrets.LOOPBACK_API_URL }}
           LOOPBACK_API_KEY: ${{ secrets.LOOPBACK_API_KEY }}
         run: |
-          # Try to find the PR URL from the claude output or from git
           PR_URL=$(gh pr list --head "loopback/fix-${{ inputs.issue_number }}" --json url --jq '.[0].url' 2>/dev/null || echo "")
           curl -s -X POST "${LOOPBACK_API_URL}/api/webhooks/github" \
             -H "Authorization: Bearer ${LOOPBACK_API_KEY}" \
