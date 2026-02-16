@@ -56,6 +56,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: "--allowedTools Bash Edit Read Write GitHub"
           prompt: |
             You are fixing an issue reported by users via Loopback feedback.
 
